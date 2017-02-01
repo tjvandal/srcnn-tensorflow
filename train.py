@@ -52,8 +52,8 @@ SAVE_DIR = os.path.join(FLAGS.save_dir, "%s_%s_%i_%s" % (
                     FLAGS.hidden.replace(",", "-"), FLAGS.kernels.replace(",", "-"),
                     FLAGS.batch_size, timestamp))
 
-#if not os.path.exists(SAVE_DIR):
-#    os.mkdir(SAVE_DIR)
+if not os.path.exists(SAVE_DIR):
+    os.mkdir(SAVE_DIR)
 
 def read_and_decode(filename_queue, is_training=True):
     reader = tf.TFRecordReader()
@@ -221,7 +221,7 @@ def train():
 
         # Create a session for running operations in the Graph.
         sess = tf.Session()
-
+        saver = tf.train.Saver()
         # Initialize the variables (the trained variables and the
         # epoch counter).
         sess.run(init_op)
@@ -253,6 +253,9 @@ def train():
                     bic_mse = np.mean((im[:,8:-8,8:-8,:] - lab)**2)
                 print "Step: %i, Train Loss: %2.4f, Test Loss: %2.4f, Test PSNR: %2.4f" %\
                     (step, train_loss, np.mean(tloss), np.mean(tpsnr))
-
+            if step % FLAGS.save_step == 0:
+                save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
+        save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" %
+                                                                                                                            step))
 if __name__ == "__main__":
     train()

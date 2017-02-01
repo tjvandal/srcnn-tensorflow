@@ -38,7 +38,6 @@ def _variable(name, initializer, cpu=True):
             var = tf.get_variable(name, initializer=initializer)
     else:
         var = tf.get_variable(name, initializer=initializer)
-    variable_summaries(var, name)
     return var
 
 def _variable_with_weight_decay(name, wd, init, cpu=True):
