@@ -16,13 +16,13 @@ def variable_summaries(var, name):
     varscope = tf.get_variable_scope().name
     name = "%s/%s" % (varscope, name)
     mean = tf.reduce_mean(var)
-    tf.scalar_summary('mean/' + name, mean)
+    tf.summary.scalar('mean/' + name, mean)
     with tf.name_scope('stddev'):
       stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
-    tf.scalar_summary('sttdev/' + name, stddev)
-    tf.scalar_summary('max/' + name, tf.reduce_max(var))
-    tf.scalar_summary('min/' + name, tf.reduce_min(var))
-    tf.histogram_summary(name, var)
+    tf.summary.scalar('sttdev/' + name, stddev)
+    tf.summary.scalar('max/' + name, tf.reduce_max(var))
+    tf.summary.scalar('min/' + name, tf.reduce_min(var))
+    tf.summary.histogram(name, var)
 
 def _variable(name, initializer, cpu=True):
     """Helper to create variable:
@@ -56,7 +56,7 @@ def _variable_with_weight_decay(name, wd, init, cpu=True):
     var = _variable(name, init, cpu=cpu)
 
     if wd is not None:
-        weight_decay = tf.mul(tf.nn.l2_loss(var), wd, name='weight_loss')
+        weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
         tf.add_to_collection('losses', weight_decay)
     return var
 

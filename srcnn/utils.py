@@ -37,8 +37,8 @@ def read_and_decode(filename_queue, is_training, height=None, width=None,
         else:
             width = tf.cast(tf.reshape(features['cols'], []), tf.int32)
             height = tf.cast(tf.reshape(features['rows'], []), tf.int32)
-            input_shape = tf.pack([height, width, input_depth])
-            label_shape = tf.pack([height, width, output_depth])
+            input_shape = tf.stack([height, width, input_depth])
+            label_shape = tf.stack([height, width, output_depth])
 
         img_in = tf.decode_raw(features['img_in'], tf.float32)
         img_in = tf.reshape(img_in, input_shape)
@@ -57,58 +57,21 @@ def read_and_decode(filename_queue, is_training, height=None, width=None,
         return {"input": img_in, "label": label,
                 "lat":lat, "lon":lon, "time": features['time']}
 
-def inputs_climate(batch_size, num_epochs, data_dir, is_training=True, height=None,
-                  width=None, input_depth=None, output_depth=None):
-    filenames= sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir)
-                  if 'tfrecords' in f])
-    if is_training:
-        filenames = [f for f in filenames if 'train' in f]
-    else:
-        filenames = [f for f in filenames if 'test' in f]
-
-    with tf.name_scope('input'), tf.device("/cpu:0"):
-        filename_queue =tf.train.string_input_producer(filenames)
-        data = read_and_decode(filename_queue, is_training, height=height, 
-                              width=width, input_depth=input_depth,
-                              output_depth=output_depth)
-        # what will happen to nan values? 
-        if is_training:
-            images, labels = tf.train.shuffle_batch([data['input'], data['label']], batch_size=batch_size,
-                                           num_threads=4, capacity=2000 + 3*batch_size,
-                                           min_after_dequeue=500, allow_smaller_final_batch=True)
-            return images, labels
-        else:
-            images = tf.expand_dims(data['input'], 0)
-            labels = tf.expand_dims(data['label'], 0)
-            times = data['time']
-            return images, labels, times
-
-def inputs_test(batch_size, num_epochs, data_dir):
-    filenames= sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir) 
-                  if 'tfrecords' in f])
-    filenames = [f for f in filenames if 'test' in f]
-    with tf.name_scope('input'), tf.device("/cpu:0"):
-        filename_queue =tf.train.string_input_producer(filenames)
-        data = read_and_decode(filename_queue, input_shape, label_shape, padding)
-        images, labels, times = tf.train.batch([data['input'], data['label'], data['time']]
-                                            , batch_size=batch_size, num_threads=2, capacity=batch_size)
-    return images, labels, times #, lat, lon
-
 def fill_na(x, fillval=0):
     fill = tf.ones_like(x) * fillval
-    return tf.select(tf.is_finite(x), x, fill)
+    return tf.where(tf.is_finite(x), x, fill)
 
 def nanmean(x, axis=None):
     x_filled = fill_na(x, 0)
-    x_sum = tf.reduce_sum(x_filled, reduction_indices=axis)
-    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), reduction_indices=axis)
+    x_sum = tf.reduce_sum(x_filled, axis=axis)
+    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), axis=axis)
     return tf.div(x_sum, x_count)
 
 def nanvar(x, axis=None):
     x_filled = fill_na(x, 0)
-    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), reduction_indices=axis)
+    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), axis=axis)
     x_mean = nanmean(x, axis=axis)
-    x_ss = tf.reduce_sum((x_filled - x_mean)**2, reduction_indices=axis)
+    x_ss = tf.reduce_sum((x_filled - x_mean)**2, axis=axis)
     return x_ss / x_count
 
 def nan_batch_norm(inputs, decay=0.999, center=True, scale=False, epsilon=0.001,
@@ -205,11 +168,11 @@ def _prepend_edge(tensor, pad_amt, axis=1):
 
     edges = pad_amt*[tf.slice(tensor,begin,end)]
     if len(edges) > 1:
-        padding = tf.concat(axis, edges)
+        padding = tf.concat(axis=axis, values=edges)
     else:
         padding = edges[0]
 
-    tensor_padded = tf.concat(axis, [padding, tensor])
+    tensor_padded = tf.concat(axis=axis, values=[padding, tensor])
     return tensor_padded
 
 def _append_edge(tensor, pad_amt, axis=1):
@@ -239,11 +202,11 @@ def _append_edge(tensor, pad_amt, axis=1):
     edges = pad_amt*[tf.slice(tensor,begin,end)]
 
     if len(edges) > 1:
-        padding = tf.concat(axis, edges)
+        padding = tf.concat(axis=axis, values=edges)
     else:
         padding = edges[0]
 
-    tensor_padded = tf.concat(axis, [tensor, padding])
+    tensor_padded = tf.concat(axis=axis, values=[tensor, padding])
     return tensor_padded
 
 def replicate_padding(tensor, pad_amt):

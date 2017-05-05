@@ -4,11 +4,13 @@ import os, sys
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import matlab.engine
+try:
+    import matlab.engine
+    MATLAB_ENGINE = matlab.engine.start_matlab("-nojvm")
+except ImportError as err:
+    print err
 
-MATLAB_ENGINE = matlab.engine.start_matlab("-nojvm")
-
-upsample = 3
+upsample = 2
 sub_image_size = 31
 stride = 15
 
@@ -90,10 +92,10 @@ def build_dataset(filelist, is_training=True):
     X, Y = [], []
     tffile_dir = os.path.dirname(filelist[0]) + "_tfrecords_%i" % upsample
     for j, f in enumerate(filelist):
-        img = cv2.imread(f, cv2.CV_LOAD_IMAGE_COLOR)
+        img = cv2.imread(f, cv2.IMREAD_COLOR)
         img = get_luminance(img)
         img = img[:,:,np.newaxis]
-        inputs, labels = process_image(img, is_training=is_training, w_matlab=True)
+        inputs, labels = process_image(img, is_training=is_training, w_matlab=False)
         X.append(inputs)
         Y.append(labels)
 
@@ -120,6 +122,6 @@ if __name__ == '__main__':
               os.path.splitext(f)[1] == '.bmp']
     set14_files = [os.path.join(dp, f) for dp, dn, filenames in os.walk(set14_path) for f in filenames if
               os.path.splitext(f)[1] == '.bmp']
-    build_dataset(train_files, is_training=True) 
-    build_dataset(set5_files, is_training=False) 
-    build_dataset(set14_files, is_training=False) 
+    build_dataset(train_files, is_training=True)
+    build_dataset(set5_files, is_training=False)
+    build_dataset(set14_files, is_training=False)

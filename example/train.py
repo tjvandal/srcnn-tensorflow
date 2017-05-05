@@ -6,7 +6,8 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import numpy as np
 
-import srcnn
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from srcnn import srcnn
 
 # model parameters
 flags = tf.flags
@@ -34,26 +35,14 @@ flags.DEFINE_integer('test_step', 500, 'How often test steps are executed and pr
 flags.DEFINE_integer('plot', 0, 'Plotting on/off')
 
 # where to save things
-flags.DEFINE_string('data_dir', 'data/train_tfrecords_3/', 'Data Location')
-flags.DEFINE_string('test_dir', 'data/test/Set5_tfrecords_3', 'What should I be testing?')
+flags.DEFINE_string('data_dir', 'data/train_tfrecords_2/', 'Data Location')
+flags.DEFINE_string('test_dir', 'data/test/Set5_tfrecords_2', 'What should I be testing?')
 flags.DEFINE_string('save_dir', 'results/', 'Where to save checkpoints.')
 flags.DEFINE_string('log_dir', 'logs/', 'Where to save checkpoints.')
 
-FLAGS = flags.FLAGS
-FLAGS._parse_flags()
-
-FLAGS.HIDDEN_LAYERS = [int(x) for x in FLAGS.hidden.split(",")]
-FLAGS.KERNELS = [int(x) for x in FLAGS.kernels.split(",")]
-FLAGS.label_size = FLAGS.input_size - sum(FLAGS.KERNELS) + len(FLAGS.KERNELS)
-FLAGS.padding = abs(FLAGS.input_size - FLAGS.label_size) / 2
-
-timestamp = str(int(time.time()))
-SAVE_DIR = os.path.join(FLAGS.save_dir, "%s_%s_%i_%s" % (
-                    FLAGS.hidden.replace(",", "-"), FLAGS.kernels.replace(",", "-"),
-                    FLAGS.batch_size, timestamp))
-
-if not os.path.exists(SAVE_DIR):
-    os.mkdir(SAVE_DIR)
+def _maybe_make_dir(directory):
+    if not os.path.exists(directory):
+        os.mkdir(directory)
 
 def read_and_decode(filename_queue, is_training=True):
     reader = tf.TFRecordReader()
@@ -76,7 +65,7 @@ def read_and_decode(filename_queue, is_training=True):
             depth = tf.cast(tf.reshape(features['depth'], []), tf.int32)
             width = tf.cast(tf.reshape(features['width'], []), tf.int32)
             height = tf.cast(tf.reshape(features['height'], []), tf.int32)
-            imgshape = tf.pack([height, width, depth])
+            imgshape = tf.stack([height, width, depth])
 
         image = tf.decode_raw(features['image'], tf.float32)
         image = tf.reshape(image, imgshape)
@@ -146,7 +135,7 @@ def average_gradients(tower_grads):
             # append tower gradient to average
             grads.append(expanded_g)
 
-        grad = tf.concat(0, grads)
+        grad = tf.concat(axis=0, values=grads)
         grad = tf.reduce_mean(grad, 0)
 
         v = grad_and_vars[0][1]
@@ -176,36 +165,38 @@ def train():
         images_sliced = tf.slice(images, [0, 0, 0, 0], [max_row, -1, -1, -1])
         labels_sliced = tf.slice(labels, [0, 0, 0, 0], [max_row, -1, -1, -1])
 
-        batch_images_norm = tf.split(0, FLAGS.num_gpus, images_sliced)
-        batch_labels_norm = tf.split(0, FLAGS.num_gpus, labels_sliced)
+        batch_images_norm = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus, value=images_sliced)
+        batch_labels_norm = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus, value=labels_sliced)
 
-        for g in range(FLAGS.num_gpus):
-            with tf.device("/gpu:%d" % g):
-                with tf.name_scope("tower_%d" % g) as scope:
-                    # compute loss
-                    loss = tower_loss(batch_images_norm[g], batch_labels_norm[g], scope)
-                    tower_losses.append(loss)
+        with tf.variable_scope("srcnn_graph") as vscope:
+            for g in range(FLAGS.num_gpus):
+                with tf.device("/gpu:%d" % g):
+                    with tf.name_scope("tower_%d" % g) as scope:
+                        # compute loss
+                        loss = tower_loss(batch_images_norm[g], batch_labels_norm[g], scope)
+                        tower_losses.append(loss)
 
-                    # reuse variables for next tower
+                        # reuse variables for next tower
+                        tf.get_variable_scope().reuse_variables()
+
+                        # gradients from current tower
+                        grads = opt1.compute_gradients(loss)
+                        tower_grads.append(grads)
+
+            # inference for testing
+            with tf.device("/gpu:0"):
+                with tf.name_scope("tower_inference") as scope:
+                    tf.get_variable_scope().reuse_variables()
+                    pred = srcnn.inference(images, FLAGS.depth,
+                                       FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS)
+
                     tf.get_variable_scope().reuse_variables()
 
-                    # gradients from current tower
-                    grads = opt1.compute_gradients(loss)
-                    tower_grads.append(grads)
-
-        # inference for testing
-        with tf.device("/gpu:0"):
-            with tf.name_scope("tower_0") as scope:
-                tf.get_variable_scope().reuse_variables()
-                pred = srcnn.inference(images, FLAGS.depth,
-                                   FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS)
-
-                tf.get_variable_scope().reuse_variables()
-                test_loss = tower_loss(images, labels, scope)
-                pred_scaled = (pred + 0.5) * 255
-                lab_scaled = (labels + 0.5) * 255
-                mse = srcnn.loss(pred_scaled, lab_scaled)
-                psnr = 10. * tf.log(255.**2 / mse) / np.log(10)
+                    #test_loss = tower_loss(images, labels, scope)
+                    pred_scaled = (pred + 0.5) * 255
+                    lab_scaled = (labels + 0.5) * 255
+                    mse = srcnn.loss(pred_scaled, lab_scaled)
+                    psnr = 10. * tf.log(255.**2 / mse) / np.log(10)
 
         # synchronize towers
         grads = average_gradients(tower_grads)
@@ -216,8 +207,8 @@ def train():
         gradient_op2 = opt2.apply_gradients(grads[-2:])
         apply_gradient_op = tf.group(gradient_op1, gradient_op2)
 
-        init_op = tf.group(tf.initialize_all_variables(),
-                           tf.initialize_local_variables())
+        init_op = tf.group(tf.global_variables_initializer(),
+                           tf.local_variables_initializer())
 
         # Create a session for running operations in the Graph.
         sess = tf.Session()
@@ -243,19 +234,34 @@ def train():
             _, train_loss = sess.run([apply_gradient_op, total_loss],
                     feed_dict={images: im, labels: lab})
             if step % FLAGS.test_step == 0:
-                tpsnr, tloss = [], []
                 for j in range(test_iters):
                     im, lab = sess.run([test_images, test_labels])
-                    test_psnr, test_loss_val, lab_hat = sess.run([psnr, test_loss, pred],
+                    test_psnr, test_mse, lab_hat = sess.run([psnr, mse, pred],
                         feed_dict={images: im, labels: lab})
-                    tpsnr.append(test_psnr)
-                    tloss.append(test_loss_val)
                     bic_mse = np.mean((im[:,8:-8,8:-8,:] - lab)**2)
-                print "Step: %i, Train Loss: %2.4f, Test Loss: %2.4f, Test PSNR: %2.4f" %\
-                    (step, train_loss, np.mean(tloss), np.mean(tpsnr))
+                print "Step: %i, Train Loss: %2.4f, Test MSE: %2.4f, Test PSNR: %2.4f" %\
+                    (step, train_loss, np.mean(test_mse), np.mean(test_psnr))
             if step % FLAGS.save_step == 0:
                 save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
         save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" %
                                                                                                                             step))
+
 if __name__ == "__main__":
+    FLAGS = flags.FLAGS
+    FLAGS._parse_flags()
+
+    FLAGS.HIDDEN_LAYERS = [int(x) for x in FLAGS.hidden.split(",")]
+    FLAGS.KERNELS = [int(x) for x in FLAGS.kernels.split(",")]
+    FLAGS.label_size = FLAGS.input_size - sum(FLAGS.KERNELS) + len(FLAGS.KERNELS)
+    FLAGS.padding = abs(FLAGS.input_size - FLAGS.label_size) / 2
+
+    timestamp = str(int(time.time()))
+    SAVE_DIR = os.path.join(FLAGS.save_dir, "%s_%s_%i_%s" % (
+                        FLAGS.hidden.replace(",", "-"), FLAGS.kernels.replace(",", "-"),
+                        FLAGS.batch_size, timestamp))
+
+
+    _maybe_make_dir(FLAGS.save_dir)
+    _maybe_make_dir(FLAGS.log_dir)
+    _maybe_make_dir(SAVE_DIR)
     train()
