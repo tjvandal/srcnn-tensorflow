@@ -10,59 +10,6 @@ import pandas as pd
 
 import utils
 
-def variable_summaries(var, name):
-  """Attach a lot of summaries to a Tensor."""
-  with tf.name_scope('summaries'):
-    varscope = tf.get_variable_scope().name
-    name = "%s/%s" % (varscope, name)
-    mean = tf.reduce_mean(var)
-    tf.summary.scalar('mean/' + name, mean)
-    with tf.name_scope('stddev'):
-      stddev = tf.sqrt(tf.reduce_sum(tf.square(var - mean)))
-    tf.summary.scalar('sttdev/' + name, stddev)
-    tf.summary.scalar('max/' + name, tf.reduce_max(var))
-    tf.summary.scalar('min/' + name, tf.reduce_min(var))
-    tf.summary.histogram(name, var)
-
-def _variable(name, initializer, cpu=True):
-    """Helper to create variable:
-    Args:
-    name: name of the variable
-    shape: list of ints
-    initializer: initializer for Variable
-    Returns:
-    Variable Tensor
-    """
-    if cpu:
-        with tf.device('/cpu:0'):
-            var = tf.get_variable(name, initializer=initializer)
-    else:
-        var = tf.get_variable(name, initializer=initializer)
-    return var
-
-def _variable_with_weight_decay(name, wd, init, cpu=True):
-    """Helper to create an initialized Variable with weight decay.
-    Note that the Variable is initialized with a truncated normal distribution.
-    A weight decay is added only if one is specified.
-    Args:
-    name: name of the variable
-    shape: list of ints
-    stddev: standard deviation of a truncated Gaussian
-    wd: add L2Loss weight decay multiplied by this float. If None, weight
-        decay is not added for this Variable.
-    Returns:
-    Variable Tensor
-    """
-    var = _variable(name, init, cpu=cpu)
-
-    if wd is not None:
-        weight_decay = tf.multiply(tf.nn.l2_loss(var), wd, name='weight_loss')
-        tf.add_to_collection('losses', weight_decay)
-    return var
-
-def conv2d(x, W):
-    return tf.nn.conv2d(x, W, strides=[1, 1, 1, 1], padding='VALID', name='conv')
-
 def _maybe_pad_x(x, padding, is_training):
     if padding == 0:
        x_pad = x
@@ -73,75 +20,89 @@ def _maybe_pad_x(x, padding, is_training):
         raise ValueError("Padding value %i should be greater than or equal to 1" % padding)
     return x_pad
 
-def inference(images, input_depth, num_filters, filter_sizes, wd=0.0,
-              keep_prob=1.0, is_training=True, weights=None, biases=None,
-              multigpu=True):
-    if isinstance(is_training, bool):
-       is_training = tf.constant(is_training)
-
-    if isinstance(wd, float) or isinstance(wd, int):
-        wd = [float(wd)] * len(num_filters)
-
-    if isinstance(keep_prob, float) or isinstance(keep_prob, int):
-        keep_prob = tf.constant(keep_prob, shape=[], name='keep_prob')
-
-    if weights is not None:
-        assert len(weights) == len(biases) == len(num_filters) == len(filter_sizes)
-
-    w_conv, b_conv, h_conv = [], [], []
-    for i, k in enumerate(filter_sizes[:-1]):
-        if i == 0:
-            c = input_depth
-            x_in = images
+class SRCNN:
+    def __init__(self, layer_sizes, filter_sizes, input_depth=1, learning_rate=1e-4,
+                 gpu=True, upscale_factor=2):
+        '''
+        Args:
+            layer_sizes: Sizes of each layer
+            filter_sizes: List of sizes of convolutional filters
+            input_depth: Number of channels in input
+        '''
+        self.upscale_factor = upscale_factor
+        self.layer_sizes = layer_sizes
+        self.filter_sizes = filter_sizes
+        self.input_depth = input_depth
+        self.learning_rate = learning_rate
+        if gpu:
+            self.device = '/gpu:0'
         else:
-            c = num_filters[i-1]
-            x_in = h_conv
+            self.device = '/cpu:0'
+        
+        self.global_step = tf.Variable(0, trainable=False)
+        self._build_graph()
+        self.learning_rate = tf.train.exponential_decay(learning_rate, self.global_step,
+                                                   100000, 0.96)
 
-        with tf.variable_scope("hidden%i" % i) as scope:
-            pad_amt = (k-1)/2
-            x_padded = _maybe_pad_x(x_in, pad_amt, is_training)
-            w_shape = [k, k, c, num_filters[i]]
-            b_shape = [num_filters[i]]
+    def _set_placeholders(self):
+        with tf.name_scope("placeholders"):
+            self.images = tf.placeholder(tf.float32, shape=(None, None, None, self.input_depth),
+                                     name="input")
+            self.labels = tf.placeholder(tf.float32, shape=(None, None, None, self.input_depth),
+                                     name="label")
+            self.is_training = tf.placeholder_with_default(True, (), name='is_training')
 
-            if weights is not None:
-                init = tf.constant(weights[i])
-                init_bias = tf.constant(biases[i])
-            else:
-                init=tf.truncated_normal(w_shape, stddev=0.001)
-                init_bias = tf.zeros(b_shape)
+        with tf.variable_scope("normalize_inputs") as scope:
+            self.images_norm = tf.contrib.layers.batch_norm(self.images, trainable=False, epsilon=1e-6)
+        with tf.variable_scope("normalize_labels") as scope:
+            self.labels_norm = tf.contrib.layers.batch_norm(self.labels, trainable=False, epsilon=1e-6)
+            scope.reuse_variables()
+            self.label_mean = tf.get_variable('BatchNorm/moving_mean')
+            self.label_variance = tf.get_variable('BatchNorm/moving_variance')
+            self.label_beta = tf.get_variable('BatchNorm/beta')
 
-            w_conv = _variable_with_weight_decay('W', wd=wd[i], init=init, cpu=multigpu)
-            b_conv = _variable('bias', init_bias, cpu=multigpu)
-            conv = conv2d(x_padded, w_conv)
+    def _inference(self, X):
+        for i, k in enumerate(self.filter_sizes):
+            with tf.variable_scope("hidden_%i" % i) as scope:
+                if i == (len(self.filter_sizes)-1):
+                    activation = None
+                else:
+                    activation = tf.nn.relu
+                pad_amt = (k-1)/2
+                X = _maybe_pad_x(X, pad_amt, self.is_training)
+                X = tf.layers.conv2d(X, self.layer_sizes[i], k, activation=activation)
+        return X
+    
+    def _loss(self, predictions):
+        with tf.name_scope("loss"):
+            err = tf.square(predictions - self.labels)
+            err_filled = utils.fill_na(err, 0)
+            finite_count = tf.reduce_sum(tf.cast(tf.is_finite(err), tf.float32))
+            mse = tf.reduce_sum(err_filled) / finite_count
+            return mse
 
-            h = tf.nn.bias_add(conv, b_conv)
-            h_conv = tf.nn.relu(h, name="hconv")
+    def _optimize(self):
+        opt1 = tf.train.AdamOptimizer(self.learning_rate)
+        opt2 = tf.train.AdamOptimizer(self.learning_rate*0.1)
 
-    with tf.variable_scope('output') as scope:
-        noise_shape = [tf.shape(h_conv)[0], 1, 1, tf.shape(h_conv)[3]]
-        x_in = tf.nn.dropout(h_conv, keep_prob, noise_shape=noise_shape)
-        pad_amt = (filter_sizes[-1]-1)/2
-        x_pad = _maybe_pad_x(x_in, pad_amt, is_training)
+        # compute gradients irrespective of optimizer
+        grads = opt1.compute_gradients(self.loss)
 
-        w_shape = [filter_sizes[-1], filter_sizes[-1], num_filters[-2],
-                            num_filters[-1]]
-        if weights is not None:
-            init = tf.constant(weights[-1])
-            init_bias = tf.constant(biases[-1])
-        else:
-            init=tf.truncated_normal(w_shape, stddev=0.001)
-            init_bias = tf.zeros([num_filters[-1]])
+        # apply gradients to first n-1 layers 
+        opt1_grads = [v for v in grads if "hidden_%i" % (len(self.filter_sizes)-1)
+                    not in v[0].op.name]
+        opt2_grads = [v for v in grads if "hidden_%i" % (len(self.filter_sizes)-1)
+                    in v[0].op.name]
 
-        w_conv3 = _variable_with_weight_decay('W', wd=wd[-1], init=init, cpu=multigpu)
-        b_conv3 = _variable('bias', init_bias, cpu=multigpu)
-        conv3 = tf.add(conv2d(x_pad, w_conv3), b_conv3, name='prediction')
-    return conv3
+        self.opt = tf.group(opt1.apply_gradients(opt1_grads, global_step=self.global_step),
+                            opt2.apply_gradients(opt2_grads))
 
-def loss(predictions, labels, alpha=1.):
-    err = tf.square(predictions - labels)
-    err_filled = utils.fill_na(err, 0)
-    finite_count = tf.reduce_sum(tf.cast(tf.is_finite(err), tf.float32))
-    mse = alpha * tf.reduce_sum(err_filled) / finite_count
-    #mse = tf.reduce_mean(err) / 2
-    tf.add_to_collection('losses', mse/2.)
-    return mse/2.
+    def _build_graph(self):
+        self._set_placeholders()
+        with tf.device(self.device):
+            _prediction_norm = self._inference(self.images_norm)
+            self.loss = self._loss(_prediction_norm)
+
+        self._optimize()
+        self.prediction = _prediction_norm * tf.sqrt(self.label_variance) - self.label_mean
+

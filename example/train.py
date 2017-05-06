@@ -14,14 +14,14 @@ flags = tf.flags
 
 # model hyperparamters
 flags.DEFINE_string('hidden', '64,32,1', 'Number of units in hidden layer 1.')
-flags.DEFINE_string('kernels', '9,5,5', 'Kernel size of layer 1.')
+flags.DEFINE_string('kernels', '9,3,5', 'Kernel size of layer 1.')
 flags.DEFINE_float('decay', 0.000, 'Weight decay term.')
 flags.DEFINE_float('keep_prob', 1.0, 'Dropout Probability.')
 flags.DEFINE_integer('depth', 1, 'Number of input channels.')
 
 # Model training parameters
 flags.DEFINE_float('learning_rate', 1e-4, 'Initial learning rate.')
-flags.DEFINE_integer('num_epochs', 1000000, 'Number of epochs to run trainer.')
+flags.DEFINE_integer('num_epochs', 10000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batch_size', 100, 'Batch size.')
 flags.DEFINE_integer('input_size', 31, 'Number of input channels.')
 
@@ -29,14 +29,12 @@ flags.DEFINE_integer('input_size', 31, 'Number of input channels.')
 flags.DEFINE_integer('num_gpus', 1, 'Number of gpus to use during training.')
 
 # when to save, plot, and test
-flags.DEFINE_integer('save_step', 1000, 'How often should I save the model')
-flags.DEFINE_integer('plot_step', 5000, 'How often should I plot figures')
-flags.DEFINE_integer('test_step', 500, 'How often test steps are executed and printed')
-flags.DEFINE_integer('plot', 0, 'Plotting on/off')
+flags.DEFINE_integer('save_step', 100, 'How often should I save the model')
+flags.DEFINE_integer('test_step', 10, 'How often test steps are executed and printed')
 
 # where to save things
-flags.DEFINE_string('data_dir', 'data/train_tfrecords_2/', 'Data Location')
-flags.DEFINE_string('test_dir', 'data/test/Set5_tfrecords_2', 'What should I be testing?')
+flags.DEFINE_string('data_dir', '/tmp/vandal.t/data/train_tfrecords_2/', 'Data Location')
+flags.DEFINE_string('test_dir', '/tmp/vandal.t/data/test/Set5_tfrecords_2', 'What should I be testing?')
 flags.DEFINE_string('save_dir', 'results/', 'Where to save checkpoints.')
 flags.DEFINE_string('log_dir', 'logs/', 'Where to save checkpoints.')
 
@@ -96,7 +94,7 @@ def inputs(train, batch_size, num_epochs=None):
         # We run this in two threads to avoid being a bottleneck.
         if train:
             image, label = tf.train.shuffle_batch(
-                [image, label], batch_size=batch_size, num_threads=2,
+                [image, label], batch_size=batch_size, num_threads=8,
                 capacity=1000 + 3 * batch_size,
                 # Ensures a minimum amount of shuffling of examples.
                 min_after_dequeue=1000)
@@ -105,114 +103,22 @@ def inputs(train, batch_size, num_epochs=None):
             label = tf.expand_dims(label, 0)
         return image,  label
 
-def tower_loss(images, labels, scope):
-    # build graph
-    prediction = srcnn.inference(images, FLAGS.depth, FLAGS.HIDDEN_LAYERS,
-                 FLAGS.KERNELS, wd=FLAGS.decay, keep_prob=FLAGS.keep_prob)
-
-    # compute loss
-    loss = srcnn.loss(prediction, labels)
-
-    losses = tf.get_collection('losses', scope)
-    total_loss = tf.add_n(losses, name='total_loss')
-
-    loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
-    loss_averages_op = loss_averages.apply(losses + [total_loss])
-
-    with tf.control_dependencies([loss_averages_op]):
-        total_loss = tf.identity(total_loss)
-
-    return total_loss
-
-def average_gradients(tower_grads):
-    average_grads = []
-    for grad_and_vars in zip(*tower_grads):
-        grads = []
-        for g, _ in grad_and_vars:
-            # represent towers
-            expanded_g = tf.expand_dims(g, 0)
-
-            # append tower gradient to average
-            grads.append(expanded_g)
-
-        grad = tf.concat(axis=0, values=grads)
-        grad = tf.reduce_mean(grad, 0)
-
-        v = grad_and_vars[0][1]
-        grad_and_var = (grad, v)
-        average_grads.append(grad_and_var)
-    return average_grads
-
 def train():
     with tf.Graph().as_default(), tf.device("/cpu:0"):
         train_images, train_labels = inputs(True, FLAGS.batch_size, FLAGS.num_epochs)
         test_images, test_labels = inputs(False, FLAGS.batch_size, FLAGS.num_epochs)
+        
+        # build graph
+        model = srcnn.SRCNN(FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS)
 
-        images = tf.placeholder(tf.float32, shape=(None, None, None, FLAGS.depth), name="input")
-        labels = tf.placeholder(tf.float32, shape=(None, None, None, FLAGS.depth), name="label")
-
-        global_step = tf.Variable(0, trainable=False)
-        learning_rate = tf.train.exponential_decay(FLAGS.learning_rate, global_step,
-                                                   100000, 0.96)
-        opt1 = tf.train.AdamOptimizer(learning_rate)
-        opt2 = tf.train.AdamOptimizer(learning_rate * 0.1)
-
-        tower_grads, tower_losses = [], []
-
-        # this will allow us to evenly split by batch
-        max_row = FLAGS.num_gpus * tf.to_int32(tf.shape(images)[0] / FLAGS.num_gpus)
-
-        images_sliced = tf.slice(images, [0, 0, 0, 0], [max_row, -1, -1, -1])
-        labels_sliced = tf.slice(labels, [0, 0, 0, 0], [max_row, -1, -1, -1])
-
-        batch_images_norm = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus, value=images_sliced)
-        batch_labels_norm = tf.split(axis=0, num_or_size_splits=FLAGS.num_gpus, value=labels_sliced)
-
-        with tf.variable_scope("srcnn_graph") as vscope:
-            for g in range(FLAGS.num_gpus):
-                with tf.device("/gpu:%d" % g):
-                    with tf.name_scope("tower_%d" % g) as scope:
-                        # compute loss
-                        loss = tower_loss(batch_images_norm[g], batch_labels_norm[g], scope)
-                        tower_losses.append(loss)
-
-                        # reuse variables for next tower
-                        tf.get_variable_scope().reuse_variables()
-
-                        # gradients from current tower
-                        grads = opt1.compute_gradients(loss)
-                        tower_grads.append(grads)
-
-            # inference for testing
-            with tf.device("/gpu:0"):
-                with tf.name_scope("tower_inference") as scope:
-                    tf.get_variable_scope().reuse_variables()
-                    pred = srcnn.inference(images, FLAGS.depth,
-                                       FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS)
-
-                    tf.get_variable_scope().reuse_variables()
-
-                    #test_loss = tower_loss(images, labels, scope)
-                    pred_scaled = (pred + 0.5) * 255
-                    lab_scaled = (labels + 0.5) * 255
-                    mse = srcnn.loss(pred_scaled, lab_scaled)
-                    psnr = 10. * tf.log(255.**2 / mse) / np.log(10)
-
-        # synchronize towers
-        grads = average_gradients(tower_grads)
-        total_loss = tf.reduce_mean(tower_losses)
-
-        # apply gradients
-        gradient_op1 = opt1.apply_gradients(grads[:-2], global_step=global_step)
-        gradient_op2 = opt2.apply_gradients(grads[-2:])
-        apply_gradient_op = tf.group(gradient_op1, gradient_op2)
-
+        # initialize graph
         init_op = tf.group(tf.global_variables_initializer(),
                            tf.local_variables_initializer())
 
         # Create a session for running operations in the Graph.
         sess = tf.Session()
         saver = tf.train.Saver()
+
         # Initialize the variables (the trained variables and the
         # epoch counter).
         sess.run(init_op)
@@ -229,18 +135,24 @@ def train():
         else:
             test_iters = 1
 
+        def feed_dict(train=True):
+            if train:
+                im, lab = sess.run([train_images, train_labels])
+            else:
+                im, lab = sess.run([test_images, test_labels])
+            return {model.images: im, model.labels: lab, model.is_training: True}
+
         for step in range(FLAGS.num_epochs):
-            im, lab = sess.run([train_images, train_labels])
-            _, train_loss = sess.run([apply_gradient_op, total_loss],
-                    feed_dict={images: im, labels: lab})
+            _, train_loss = sess.run([model.opt, model.loss],
+                    feed_dict=feed_dict(True))
+
             if step % FLAGS.test_step == 0:
                 for j in range(test_iters):
                     im, lab = sess.run([test_images, test_labels])
-                    test_psnr, test_mse, lab_hat = sess.run([psnr, mse, pred],
-                        feed_dict={images: im, labels: lab})
-                    bic_mse = np.mean((im[:,8:-8,8:-8,:] - lab)**2)
-                print "Step: %i, Train Loss: %2.4f, Test MSE: %2.4f, Test PSNR: %2.4f" %\
-                    (step, train_loss, np.mean(test_mse), np.mean(test_psnr))
+                    test_stats = sess.run([model.loss],
+                        feed_dict=feed_dict(False))
+                print "Step: %i, Train Loss: %2.4f, Test Loss: %2.4f" %\
+                    (step, train_loss, test_stats[0])
             if step % FLAGS.save_step == 0:
                 save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
         save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" %
@@ -255,13 +167,15 @@ if __name__ == "__main__":
     FLAGS.label_size = FLAGS.input_size - sum(FLAGS.KERNELS) + len(FLAGS.KERNELS)
     FLAGS.padding = abs(FLAGS.input_size - FLAGS.label_size) / 2
 
-    timestamp = str(int(time.time()))
-    SAVE_DIR = os.path.join(FLAGS.save_dir, "%s_%s_%i_%s" % (
+    file_dir = os.path.dirname(os.path.abspath(__file__))
+    SAVE_DIR = os.path.join(file_dir, FLAGS.save_dir, "%s_%s_%i" % (
                         FLAGS.hidden.replace(",", "-"), FLAGS.kernels.replace(",", "-"),
-                        FLAGS.batch_size, timestamp))
+                        FLAGS.batch_size))
+    FLAGS.log_dir = os.path.join(file_dir, FLAGS.log_dir)
+    #FLAGS.data_dir = os.path.join(file_dir, FLAGS.data_dir)
+    #FLAGS.test_dir = os.path.join(file_dir, FLAGS.test_dir)
 
 
-    _maybe_make_dir(FLAGS.save_dir)
     _maybe_make_dir(FLAGS.log_dir)
     _maybe_make_dir(SAVE_DIR)
     train()
