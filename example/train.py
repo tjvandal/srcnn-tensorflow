@@ -33,8 +33,8 @@ flags.DEFINE_integer('save_step', 100, 'How often should I save the model')
 flags.DEFINE_integer('test_step', 10, 'How often test steps are executed and printed')
 
 # where to save things
-flags.DEFINE_string('data_dir', '/tmp/vandal.t/data/train_tfrecords_2/', 'Data Location')
-flags.DEFINE_string('test_dir', '/tmp/vandal.t/data/test/Set5_tfrecords_2', 'What should I be testing?')
+flags.DEFINE_string('data_dir', 'data/train_tfrecords_2/', 'Data Location')
+flags.DEFINE_string('test_dir', 'data/test/Set5_tfrecords_2', 'What should I be testing?')
 flags.DEFINE_string('save_dir', 'results/', 'Where to save checkpoints.')
 flags.DEFINE_string('log_dir', 'logs/', 'Where to save checkpoints.')
 
