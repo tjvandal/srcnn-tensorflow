@@ -20,7 +20,15 @@ experiment = os.path.basename(FLAGS.checkpoint_dir)
 layer_sizes = [int(k) for k in experiment.split("_")[0].split("-")]
 filter_sizes = [int(k) for k in experiment.split("_")[1].split("-")]
 
-model = srcnn.SRCNN(layer_sizes, filter_sizes)
+x = tf.placeholder(tf.float32, shape=(None, None, None, 1),
+                                               name="input")
+y = tf.placeholder(tf.float32, shape=(None, None, None, 1),
+                                               name="label")
+is_training = tf.placeholder_with_default(False, (), name='is_training')
+
+
+model = srcnn.SRCNN(x, y, layer_sizes, filter_sizes, is_training=is_training,
+                   gpu=False)
 
 saver = tf.train.Saver()
 init_op = tf.group(tf.global_variables_initializer(),
@@ -37,7 +45,7 @@ img = process_data.get_luminance(img)
 hr = img.copy()
 for j in range(3):
     hr = cv2.resize(hr, (0,0), fx=2., fy=2., interpolation=cv2.INTER_CUBIC)
-    feed_dict = {model.images: hr[np.newaxis, :, :, np.newaxis], model.is_training: False}
+    feed_dict = {x: hr[np.newaxis, :, :, np.newaxis], is_training: False}
     hr = sess.run(model.prediction, feed_dict=feed_dict)[0, :, :, 0]
 
 import matplotlib.pyplot as plt

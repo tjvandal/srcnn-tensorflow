@@ -21,45 +21,48 @@ def _maybe_pad_x(x, padding, is_training):
     return x_pad
 
 class SRCNN:
-    def __init__(self, layer_sizes, filter_sizes, input_depth=1, learning_rate=1e-4,
-                 gpu=True, upscale_factor=2):
+    def __init__(self, x, y, layer_sizes, filter_sizes, input_depth=1,
+                 learning_rate=1e-4,
+                 gpu=True, upscale_factor=2, output_depth=1, is_training=True):
         '''
         Args:
             layer_sizes: Sizes of each layer
             filter_sizes: List of sizes of convolutional filters
             input_depth: Number of channels in input
         '''
+        self.x = x
+        self.y = y
+        self.is_training = is_training
         self.upscale_factor = upscale_factor
         self.layer_sizes = layer_sizes
         self.filter_sizes = filter_sizes
         self.input_depth = input_depth
+        self.output_depth = output_depth
         self.learning_rate = learning_rate
         if gpu:
             self.device = '/gpu:0'
         else:
             self.device = '/cpu:0'
-        
+
         self.global_step = tf.Variable(0, trainable=False)
-        self._build_graph()
         self.learning_rate = tf.train.exponential_decay(learning_rate, self.global_step,
                                                    100000, 0.96)
+        self._build_graph()
 
-    def _set_placeholders(self):
-        with tf.name_scope("placeholders"):
-            self.images = tf.placeholder(tf.float32, shape=(None, None, None, self.input_depth),
-                                     name="input")
-            self.labels = tf.placeholder(tf.float32, shape=(None, None, None, self.input_depth),
-                                     name="label")
-            self.is_training = tf.placeholder_with_default(True, (), name='is_training')
-
+    def _normalize(self):
         with tf.variable_scope("normalize_inputs") as scope:
-            self.images_norm = tf.contrib.layers.batch_norm(self.images, trainable=False, epsilon=1e-6)
+            self.x_norm = tf.contrib.layers.batch_norm(self.x, trainable=False,
+                                epsilon=1e-6,
+                               updates_collections=None, center=False,
+                               scale=False, is_training=self.is_training)
         with tf.variable_scope("normalize_labels") as scope:
-            self.labels_norm = tf.contrib.layers.batch_norm(self.labels, trainable=False, epsilon=1e-6)
+            self.y_norm = tf.contrib.layers.batch_norm(self.y, trainable=False,
+                                    epsilon=1e-6, updates_collections=None,
+                                  scale=False, is_training=self.is_training)
             scope.reuse_variables()
-            self.label_mean = tf.get_variable('BatchNorm/moving_mean')
-            self.label_variance = tf.get_variable('BatchNorm/moving_variance')
-            self.label_beta = tf.get_variable('BatchNorm/beta')
+            self.y_mean = tf.get_variable('BatchNorm/moving_mean')
+            self.y_variance = tf.get_variable('BatchNorm/moving_variance')
+            self.y_beta = tf.get_variable('BatchNorm/beta')
 
     def _inference(self, X):
         for i, k in enumerate(self.filter_sizes):
@@ -72,10 +75,10 @@ class SRCNN:
                 X = _maybe_pad_x(X, pad_amt, self.is_training)
                 X = tf.layers.conv2d(X, self.layer_sizes[i], k, activation=activation)
         return X
-    
+
     def _loss(self, predictions):
         with tf.name_scope("loss"):
-            err = tf.square(predictions - self.labels)
+            err = tf.square(predictions - self.y_norm)
             err_filled = utils.fill_na(err, 0)
             finite_count = tf.reduce_sum(tf.cast(tf.is_finite(err), tf.float32))
             mse = tf.reduce_sum(err_filled) / finite_count
@@ -97,12 +100,20 @@ class SRCNN:
         self.opt = tf.group(opt1.apply_gradients(opt1_grads, global_step=self.global_step),
                             opt2.apply_gradients(opt2_grads))
 
+    def _summaries(self):
+        tf.contrib.layers.summarize_tensors(tf.trainable_variables())
+        tf.summary.scalar('loss', self.loss)
+        tf.summary.scalar('rmse', self.rmse)
+
     def _build_graph(self):
-        self._set_placeholders()
+        self._normalize()
         with tf.device(self.device):
-            _prediction_norm = self._inference(self.images_norm)
+            _prediction_norm = self._inference(self.x_norm)
             self.loss = self._loss(_prediction_norm)
 
-        self._optimize()
-        self.prediction = _prediction_norm * tf.sqrt(self.label_variance) - self.label_mean
+            self._optimize()
+        self.prediction = _prediction_norm * tf.sqrt(self.y_variance) - self.y_mean
+        self.rmse = tf.sqrt(utils.nanmean(tf.square(self.prediction - self.y)),
+                            name='rmse')
+        self._summaries()
 

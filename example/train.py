@@ -15,26 +15,20 @@ flags = tf.flags
 # model hyperparamters
 flags.DEFINE_string('hidden', '64,32,1', 'Number of units in hidden layer 1.')
 flags.DEFINE_string('kernels', '9,3,5', 'Kernel size of layer 1.')
-flags.DEFINE_float('decay', 0.000, 'Weight decay term.')
-flags.DEFINE_float('keep_prob', 1.0, 'Dropout Probability.')
 flags.DEFINE_integer('depth', 1, 'Number of input channels.')
 
 # Model training parameters
-flags.DEFINE_float('learning_rate', 1e-4, 'Initial learning rate.')
 flags.DEFINE_integer('num_epochs', 10000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batch_size', 100, 'Batch size.')
 flags.DEFINE_integer('input_size', 31, 'Number of input channels.')
-
-# which device
-flags.DEFINE_integer('num_gpus', 1, 'Number of gpus to use during training.')
 
 # when to save, plot, and test
 flags.DEFINE_integer('save_step', 100, 'How often should I save the model')
 flags.DEFINE_integer('test_step', 10, 'How often test steps are executed and printed')
 
 # where to save things
-flags.DEFINE_string('data_dir', '/tmp/vandal.t/data/train_tfrecords_2/', 'Data Location')
-flags.DEFINE_string('test_dir', '/tmp/vandal.t/data/test/Set5_tfrecords_2', 'What should I be testing?')
+flags.DEFINE_string('data_dir', 'data/train_tfrecords_2/', 'Data Location')
+flags.DEFINE_string('test_dir', 'data/test/Set5_tfrecords_2', 'What should I be testing?')
 flags.DEFINE_string('save_dir', 'results/', 'Where to save checkpoints.')
 flags.DEFINE_string('log_dir', 'logs/', 'Where to save checkpoints.')
 
@@ -107,9 +101,19 @@ def train():
     with tf.Graph().as_default(), tf.device("/cpu:0"):
         train_images, train_labels = inputs(True, FLAGS.batch_size, FLAGS.num_epochs)
         test_images, test_labels = inputs(False, FLAGS.batch_size, FLAGS.num_epochs)
-        
+
+        # set some placeholders
+        x = tf.placeholder(tf.float32, shape=(None, None, None, FLAGS.depth),
+                                                       name="input")
+        y = tf.placeholder(tf.float32, shape=(None, None, None, FLAGS.depth),
+                                                       name="label")
+        is_training = tf.placeholder_with_default(True, (), name='is_training') 
+
         # build graph
-        model = srcnn.SRCNN(FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS)
+        model = srcnn.SRCNN(x, y, FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS,
+                            is_training=is_training, input_depth=FLAGS.depth,
+                            output_depth=FLAGS.depth,
+                           learning_rate=1e-4, gpu=True)
 
         # initialize graph
         init_op = tf.group(tf.global_variables_initializer(),
@@ -135,12 +139,14 @@ def train():
         else:
             test_iters = 1
 
+        # for demo purposes this will keep the code simpler
+        # in practice you'd want to feed train_images and train_labels in to SRCNN as a pipline
         def feed_dict(train=True):
             if train:
                 im, lab = sess.run([train_images, train_labels])
             else:
                 im, lab = sess.run([test_images, test_labels])
-            return {model.images: im, model.labels: lab, model.is_training: True}
+            return {x: im, y: lab, is_training: True}
 
         for step in range(FLAGS.num_epochs):
             _, train_loss = sess.run([model.opt, model.loss],
@@ -148,7 +154,7 @@ def train():
 
             if step % FLAGS.test_step == 0:
                 for j in range(test_iters):
-                    im, lab = sess.run([test_images, test_labels])
+                    #im, lab = sess.run([test_images, test_labels])
                     test_stats = sess.run([model.loss],
                         feed_dict=feed_dict(False))
                 print "Step: %i, Train Loss: %2.4f, Test Loss: %2.4f" %\
