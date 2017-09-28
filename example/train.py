@@ -183,5 +183,6 @@ if __name__ == "__main__":
 
 
     _maybe_make_dir(FLAGS.log_dir)
+    _maybe_make_dir(os.path.dirname(SAVE_DIR))
     _maybe_make_dir(SAVE_DIR)
     train()
