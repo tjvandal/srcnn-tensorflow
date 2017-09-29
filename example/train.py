@@ -3,11 +3,13 @@ import sys
 import time
 
 import tensorflow as tf
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from srcnn import srcnn
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'srcnn'))
+import srcnn
 
 # model parameters
 flags = tf.flags
@@ -158,8 +160,8 @@ def train():
                     #im, lab = sess.run([test_images, test_labels])
                     test_stats = sess.run([model.loss],
                         feed_dict=feed_dict(False))
-                print "Step: %i, Train Loss: %2.4f, Test Loss: %2.4f" %\
-                    (step, train_loss, test_stats[0])
+                print("Step: %i, Train Loss: %2.4f, Test Loss: %2.4f" %\
+                        (step, train_loss, test_stats[0]))
             if step % FLAGS.save_step == 0:
                 save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
         save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" %
@@ -172,7 +174,7 @@ if __name__ == "__main__":
     FLAGS.HIDDEN_LAYERS = [int(x) for x in FLAGS.hidden.split(",")]
     FLAGS.KERNELS = [int(x) for x in FLAGS.kernels.split(",")]
     FLAGS.label_size = FLAGS.input_size - sum(FLAGS.KERNELS) + len(FLAGS.KERNELS)
-    FLAGS.padding = abs(FLAGS.input_size - FLAGS.label_size) / 2
+    FLAGS.padding = int(abs(FLAGS.input_size - FLAGS.label_size) / 2)
 
     file_dir = os.path.dirname(os.path.abspath(__file__))
     SAVE_DIR = os.path.join(file_dir, FLAGS.save_dir, "%s_%s_%i" % (

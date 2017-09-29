@@ -3,8 +3,8 @@ import tensorflow as tf
 import numpy as np
 import cv2
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from srcnn import srcnn
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'srcnn'))
+import srcnn
 import process_data
 
 # model parameters

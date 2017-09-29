@@ -1,14 +1,13 @@
 import cv2
 import os, sys
 
-import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 try:
     import matlab.engine
     MATLAB_ENGINE = matlab.engine.start_matlab("-nojvm")
 except ImportError as err:
-    print err
+    print(err)
 
 upsample = 2
 sub_image_size = 31
@@ -104,7 +103,7 @@ def build_dataset(filelist, is_training=True):
                 write_records(X, Y, tffile_dir, 'train_%i' % file_count)
             else:
                 write_records(X, Y, tffile_dir, 'test_%i' % file_count)
-            print "Training:", is_training, " File number:", file_count
+            print("Training:", is_training, " File number:", file_count)
             file_count += 1
             X, Y = [], []
 

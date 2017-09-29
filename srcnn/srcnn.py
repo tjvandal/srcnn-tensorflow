@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import tensorflow as tf
 import matplotlib
+matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -71,7 +72,7 @@ class SRCNN:
                     activation = None
                 else:
                     activation = tf.nn.relu
-                pad_amt = (k-1)/2
+                pad_amt = int((k-1)/2)
                 X = _maybe_pad_x(X, pad_amt, self.is_training)
                 X = tf.layers.conv2d(X, self.layer_sizes[i], k, activation=activation)
         return X
