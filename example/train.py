@@ -21,6 +21,7 @@ flags.DEFINE_integer('depth', 1, 'Number of input channels.')
 flags.DEFINE_integer('num_epochs', 10000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batch_size', 100, 'Batch size.')
 flags.DEFINE_integer('input_size', 31, 'Number of input channels.')
+flags.DEFINE_boolean('gpu', False, 'Train on gpu or cpu.')
 
 # when to save, plot, and test
 flags.DEFINE_integer('save_step', 100, 'How often should I save the model')
@@ -113,7 +114,7 @@ def train():
         model = srcnn.SRCNN(x, y, FLAGS.HIDDEN_LAYERS, FLAGS.KERNELS,
                             is_training=is_training, input_depth=FLAGS.depth,
                             output_depth=FLAGS.depth,
-                           learning_rate=1e-4, gpu=True)
+                           learning_rate=1e-4, gpu=FLAGS.gpu)
 
         # initialize graph
         init_op = tf.group(tf.global_variables_initializer(),
