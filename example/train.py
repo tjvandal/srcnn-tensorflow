@@ -15,19 +15,19 @@ import srcnn
 flags = tf.flags
 
 # model hyperparamters
-flags.DEFINE_string('hidden', '64,32,1', 'Number of units in hidden layer 1.')
+flags.DEFINE_string('hidden', '64,32,3', 'Number of units in hidden layer 1.')
 flags.DEFINE_string('kernels', '9,3,5', 'Kernel size of layer 1.')
-flags.DEFINE_integer('depth', 1, 'Number of input channels.')
+flags.DEFINE_integer('depth', 3, 'Number of input channels.')
 
 # Model training parameters
-flags.DEFINE_integer('num_epochs', 10000, 'Number of epochs to run trainer.')
+flags.DEFINE_integer('num_epochs', 50000, 'Number of epochs to run trainer.')
 flags.DEFINE_integer('batch_size', 100, 'Batch size.')
 flags.DEFINE_integer('input_size', 31, 'Number of input channels.')
-flags.DEFINE_boolean('gpu', False, 'Train on gpu or cpu.')
+flags.DEFINE_boolean('gpu', True, 'Train on gpu or cpu.')
 
 # when to save, plot, and test
 flags.DEFINE_integer('save_step', 100, 'How often should I save the model')
-flags.DEFINE_integer('test_step', 10, 'How often test steps are executed and printed')
+flags.DEFINE_integer('test_step', 100, 'How often test steps are executed and printed')
 
 # where to save things
 flags.DEFINE_string('data_dir', 'data/train_tfrecords_2/', 'Data Location')
@@ -126,8 +126,7 @@ def train():
         sess = tf.Session()
         saver = tf.train.Saver()
 
-        # Initialize the variables (the trained variables and the
-        # epoch counter).
+        # Initialize the variables (the trained variables and the # epoch counter).
         sess.run(init_op)
 
         # Start input enqueue threads.
@@ -164,8 +163,7 @@ def train():
                         (step, train_loss, test_stats[0]))
             if step % FLAGS.save_step == 0:
                 save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
-        save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" %
-                                                                                                                            step))
+        save_path = saver.save(sess, os.path.join(SAVE_DIR, "model_%08i.ckpt" % step))
 
 if __name__ == "__main__":
     FLAGS = flags.FLAGS

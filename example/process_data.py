@@ -40,13 +40,12 @@ def process_image(img, upsample=upsample, stride=15, imsize=31, is_training=True
         img_l = cv2.resize(imgsub, (0,0), fx=1./upsample, fy=1./upsample, interpolation=cv2.INTER_CUBIC)
         imgup = cv2.resize(img_l, (0,0), fx=1.*upsample, fy=1.*upsample, interpolation=cv2.INTER_CUBIC)
 
-
     imgsub = imgsub[upsample:-upsample, upsample:-upsample]
     imgup = imgup[upsample:-upsample, upsample:-upsample]
     h, w, d = imgsub.shape # reset with the new dimensions
 
     if not is_training:
-        return imgup[np.newaxis, :, :, np.newaxis], imgsub[np.newaxis]
+        return imgup[np.newaxis], imgsub[np.newaxis]
 
     for y in np.arange(0, h, stride):
         for x in np.arange(0, w, stride):
@@ -56,7 +55,7 @@ def process_image(img, upsample=upsample, stride=15, imsize=31, is_training=True
                 continue
 
             labels += [imgsub[np.newaxis, ylow:yhigh, xlow:xhigh]]
-            inputs += [imgup[np.newaxis, ylow:yhigh, xlow:xhigh, np.newaxis]]
+            inputs += [imgup[np.newaxis, ylow:yhigh, xlow:xhigh, :]]
 
     return np.concatenate(inputs, axis=0), np.concatenate(labels, axis=0)
 
@@ -92,8 +91,8 @@ def build_dataset(filelist, is_training=True):
     tffile_dir = os.path.dirname(filelist[0]) + "_tfrecords_%i" % upsample
     for j, f in enumerate(filelist):
         img = cv2.imread(f, cv2.IMREAD_COLOR)
-        img = get_luminance(img)
-        img = img[:,:,np.newaxis]
+        #img = get_luminance(img) # lets deal in colors
+        #img = img[:,:,np.newaxis]
         inputs, labels = process_image(img, is_training=is_training, w_matlab=False)
         X.append(inputs)
         Y.append(labels)
