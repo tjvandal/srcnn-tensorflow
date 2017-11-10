@@ -24,7 +24,7 @@ def _maybe_pad_x(x, padding, is_training):
 class SRCNN:
     def __init__(self, x, y, layer_sizes, filter_sizes, input_depth=1,
                  learning_rate=1e-4,
-                 gpu=True, upscale_factor=2, output_depth=1, is_training=True):
+                 device='/gpu:0', upscale_factor=2, output_depth=1, is_training=True):
         '''
         Args:
             layer_sizes: Sizes of each layer
@@ -40,11 +40,7 @@ class SRCNN:
         self.input_depth = input_depth
         self.output_depth = output_depth
         self.learning_rate = learning_rate
-        if gpu:
-            self.device = '/gpu:0'
-        else:
-            self.device = '/cpu:0'
-
+        self.device = device
         self.global_step = tf.Variable(0, trainable=False)
         self.learning_rate = tf.train.exponential_decay(learning_rate, self.global_step,
                                                    100000, 0.96)
@@ -79,7 +75,12 @@ class SRCNN:
 
     def _loss(self, predictions):
         with tf.name_scope("loss"):
-            err = tf.square(predictions - self.y_norm)
+            # if training then crop center of y, else, padding was applied
+            slice_amt = (np.sum(self.filter_sizes) - len(self.filter_sizes)) / 2
+            slice_y = self.y_norm[:,slice_amt:-slice_amt, slice_amt:-slice_amt]
+            _y = tf.cond(self.is_training, lambda: slice_y, lambda: self.y_norm)
+            tf.subtract(predictions, _y)
+            err = tf.square(predictions - _y)
             err_filled = utils.fill_na(err, 0)
             finite_count = tf.reduce_sum(tf.cast(tf.is_finite(err), tf.float32))
             mse = tf.reduce_sum(err_filled) / finite_count
@@ -111,9 +112,9 @@ class SRCNN:
         with tf.device(self.device):
             _prediction_norm = self._inference(self.x_norm)
             self.loss = self._loss(_prediction_norm)
-
             self._optimize()
-        self.prediction = _prediction_norm * tf.sqrt(self.y_variance) - self.y_mean
+
+        self.prediction = _prediction_norm * tf.sqrt(self.y_variance) + self.y_mean
         self.rmse = tf.sqrt(utils.nanmean(tf.square(self.prediction - self.y)),
                             name='rmse')
         self._summaries()
