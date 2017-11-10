@@ -5,7 +5,6 @@ import cv2
 
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'srcnn'))
 import srcnn
-import process_data
 
 # model parameters
 flags = tf.flags
@@ -28,7 +27,7 @@ is_training = tf.placeholder_with_default(False, (), name='is_training')
 
 
 model = srcnn.SRCNN(x, y, layer_sizes, filter_sizes, is_training=is_training,
-                   gpu=False, input_depth=3, output_depth=3)
+                    device='/cpu:0', input_depth=3, output_depth=3)
 
 saver = tf.train.Saver()
 init_op = tf.group(tf.global_variables_initializer(),
