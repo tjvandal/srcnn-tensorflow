@@ -25,7 +25,7 @@ flags.DEFINE_integer('upscale', 2, 'Upscale factor.')
 
 # Model training parameters
 flags.DEFINE_integer('num_epochs', 50000, 'Number of epochs to run trainer.')
-flags.DEFINE_integer('batch_size', 100, 'Batch size.')
+flags.DEFINE_integer('batch_size', 10, 'Batch size.')
 flags.DEFINE_string('device', '/gpu:3', 'What device should I train on?')
 
 # when to save, plot, and test

@@ -10,8 +10,8 @@ import srcnn
 # model parameters
 flags = tf.flags
 
-flags.DEFINE_string('checkpoint_dir', 'results/64-32-3_9-3-5_100', 'Checkpoint directory.')
-flags.DEFINE_string('image_file', 'yosemite_icon.png', 'Sample image file.')
+flags.DEFINE_string('checkpoint_dir', 'results/64-32-3_9-3-5_10', 'Checkpoint directory.')
+flags.DEFINE_string('image_file', 'yosemite.jpg', 'Sample image file.')
 flags.DEFINE_string('device', '/cpu:0', 'Select your device (/cpu:0 or /gpu:0).')
 
 FLAGS = flags.FLAGS
@@ -46,15 +46,13 @@ img = cv2.imread(FLAGS.image_file, cv2.IMREAD_COLOR)
 hr = img.copy()
 for j in range(1):
     hr = cv2.resize(hr, (0,0), fx=2., fy=2., interpolation=cv2.INTER_CUBIC)
-    print('hr shape', hr.shape)
     feed_dict = {x: hr[np.newaxis], is_training: False}
     hr = sess.run(model.prediction, feed_dict=feed_dict)[0]
 
-print type(img[0,0,0])
-
-fig, axs = plt.subplots(1,3)
+fig, axs = plt.subplots(3,1)
 axs = np.ravel(axs)
 axs[0].imshow(img[:,:,[0,2,1]], interpolation='nearest', vmin=0, vmax=255)
+axs[0].imshow(img, interpolation='nearest', vmin=0, vmax=255)
 axs[0].axis('off')
 axs[0].set_title("Nearest")
 
@@ -65,6 +63,5 @@ axs[1].set_title("Bicubic")
 axs[2].imshow(hr.astype(np.uint8)[:,:,[0,2,1]], vmin=0, vmax=255)
 axs[2].axis('off')
 axs[2].set_title("SRCNN")
-
-plt.savefig('yosemite_example.png')
 plt.show()
+
