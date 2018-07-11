@@ -55,7 +55,7 @@ def train():
                                                     name="input_placeholder")
         y_placeholder = tf.placeholder_with_default(tf.zeros(shape=(1,20,20,3), dtype=tf.float32),
                                                     shape=(None, None, None, 3),
-                                                    name="input_placeholder")
+                                                    name="label_placeholder")
 
 
         x = tf.cond(is_training, lambda: train_images, lambda: x_placeholder)
@@ -111,7 +111,7 @@ def train():
             if step % FLAGS.test_step == 0:
                 stats = []
                 for j, (xtest, ytest) in enumerate(zip(test_images_arr, test_labels_arr)):
-                    stats.append(sess.run([bic_psnr], feed_dict={is_training: False, x_placeholder: xtest,
+                    stats.append(sess.run([psnr], feed_dict={is_training: False, x_placeholder: xtest,
                                     y_placeholder: ytest}))
                 print("Step: %i, Train Loss: %2.4f, Test PSNR: %2.4f" %\
                         (step, train_loss, np.mean(stats)))

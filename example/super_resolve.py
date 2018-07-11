@@ -2,6 +2,7 @@ import os, sys
 import tensorflow as tf
 import numpy as np
 import cv2
+import matplotlib.pyplot as plt
 
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'srcnn'))
 import srcnn
@@ -11,6 +12,7 @@ flags = tf.flags
 
 flags.DEFINE_string('checkpoint_dir', 'results/64-32-3_9-3-5_100', 'Checkpoint directory.')
 flags.DEFINE_string('image_file', 'yosemite_icon.png', 'Sample image file.')
+flags.DEFINE_string('device', '/cpu:0', 'Select your device (/cpu:0 or /gpu:0).')
 
 FLAGS = flags.FLAGS
 FLAGS._parse_flags()
@@ -27,7 +29,7 @@ is_training = tf.placeholder_with_default(False, (), name='is_training')
 
 
 model = srcnn.SRCNN(x, y, layer_sizes, filter_sizes, is_training=is_training,
-                    device='/cpu:0', input_depth=3, output_depth=3)
+                    device=FLAGS.device, input_depth=3, output_depth=3)
 
 saver = tf.train.Saver()
 init_op = tf.group(tf.global_variables_initializer(),
@@ -44,12 +46,12 @@ img = cv2.imread(FLAGS.image_file, cv2.IMREAD_COLOR)
 hr = img.copy()
 for j in range(1):
     hr = cv2.resize(hr, (0,0), fx=2., fy=2., interpolation=cv2.INTER_CUBIC)
+    print('hr shape', hr.shape)
     feed_dict = {x: hr[np.newaxis], is_training: False}
     hr = sess.run(model.prediction, feed_dict=feed_dict)[0]
 
 print type(img[0,0,0])
 
-import matplotlib.pyplot as plt
 fig, axs = plt.subplots(1,3)
 axs = np.ravel(axs)
 axs[0].imshow(img[:,:,[0,2,1]], interpolation='nearest', vmin=0, vmax=255)
