@@ -12,8 +12,7 @@ import numpy as np
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'srcnn'))
 import srcnn
 
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datacenter'))
-from datacenter.images import SuperResData
+from images import SuperResData
 
 # model parameters
 flags = tf.flags
