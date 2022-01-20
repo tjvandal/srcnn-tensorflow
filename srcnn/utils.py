@@ -11,21 +11,21 @@ from tensorflow.python.training import moving_averages
 
 def read_and_decode(filename_queue, is_training, height=None, width=None,
                     input_depth=None, output_depth=None):
-    reader = tf.TFRecordReader()
+    reader = tf.compat.v1.TFRecordReader()
     _, serialized_example = reader.read(filename_queue)
-    features = tf.parse_single_example(
-        serialized_example,
-        features={'label': tf.FixedLenFeature([], tf.string),
-                  'img_in': tf.FixedLenFeature([], tf.string),
+    features = tf.io.parse_single_example(
+        serialized=serialized_example,
+        features={'label': tf.io.FixedLenFeature([], tf.string),
+                  'img_in': tf.io.FixedLenFeature([], tf.string),
                   #'input_depth': tf.FixedLenFeature([], tf.int64),
                   #'label_depth': tf.FixedLenFeature([], tf.int64),
-                  'rows': tf.FixedLenFeature([], tf.int64),
-                  'cols': tf.FixedLenFeature([], tf.int64),
+                  'rows': tf.io.FixedLenFeature([], tf.int64),
+                  'cols': tf.io.FixedLenFeature([], tf.int64),
                   #'feature_vars': tf.FixedLenFeature([], tf.string),
                   #'label_vars': tf.FixedLenFeature([], tf.string),
-                  'time': tf.FixedLenFeature([], tf.int64),
-                  'lat': tf.FixedLenFeature([], tf.string),
-                  'lon': tf.FixedLenFeature([], tf.string)
+                  'time': tf.io.FixedLenFeature([], tf.int64),
+                  'lat': tf.io.FixedLenFeature([], tf.string),
+                  'lon': tf.io.FixedLenFeature([], tf.string)
                 })
 
     with tf.device("/cpu:0"):
@@ -40,18 +40,18 @@ def read_and_decode(filename_queue, is_training, height=None, width=None,
             input_shape = tf.stack([height, width, input_depth])
             label_shape = tf.stack([height, width, output_depth])
 
-        img_in = tf.decode_raw(features['img_in'], tf.float32)
+        img_in = tf.io.decode_raw(features['img_in'], tf.float32)
         img_in = tf.reshape(img_in, input_shape)
         img_in = tf.cast(img_in, tf.float32)
 
-        label = tf.decode_raw(features['label'], tf.float32)
+        label = tf.io.decode_raw(features['label'], tf.float32)
         label = tf.reshape(label, label_shape)
         label = tf.cast(label, tf.float32)
 
-        lat = tf.decode_raw(features['lat'], tf.float32)
+        lat = tf.io.decode_raw(features['lat'], tf.float32)
         lat = tf.reshape(lat, [label_shape[0]])
 
-        lon = tf.decode_raw(features['lon'], tf.float32)
+        lon = tf.io.decode_raw(features['lon'], tf.float32)
         lon = tf.reshape(lon, [label_shape[1]])
 
         return {"input": img_in, "label": label,
@@ -59,19 +59,19 @@ def read_and_decode(filename_queue, is_training, height=None, width=None,
 
 def fill_na(x, fillval=0):
     fill = tf.ones_like(x) * fillval
-    return tf.where(tf.is_finite(x), x, fill)
+    return tf.compat.v1.where(tf.math.is_finite(x), x, fill)
 
 def nanmean(x, axis=None):
     x_filled = fill_na(x, 0)
-    x_sum = tf.reduce_sum(x_filled, axis=axis)
-    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), axis=axis)
-    return tf.div(x_sum, x_count)
+    x_sum = tf.reduce_sum(input_tensor=x_filled, axis=axis)
+    x_count = tf.reduce_sum(input_tensor=tf.cast(tf.math.is_finite(x), tf.float32), axis=axis)
+    return tf.compat.v1.div(x_sum, x_count)
 
 def nanvar(x, axis=None):
     x_filled = fill_na(x, 0)
-    x_count = tf.reduce_sum(tf.cast(tf.is_finite(x), tf.float32), axis=axis)
+    x_count = tf.reduce_sum(input_tensor=tf.cast(tf.math.is_finite(x), tf.float32), axis=axis)
     x_mean = nanmean(x, axis=axis)
-    x_ss = tf.reduce_sum((x_filled - x_mean)**2, axis=axis)
+    x_ss = tf.reduce_sum(input_tensor=(x_filled - x_mean)**2, axis=axis)
     return x_ss / x_count
 
 def nan_batch_norm(inputs, decay=0.999, center=True, scale=False, epsilon=0.001,
@@ -197,7 +197,7 @@ def _append_edge(tensor, pad_amt, axis=1):
 
     begin = [0, 0, 0, 0]
     end = [-1, -1, -1, -1]
-    begin[axis] = tf.shape(tensor)[axis]-1 # go to the end
+    begin[axis] = tf.shape(input=tensor)[axis]-1 # go to the end
 
     edges = pad_amt*[tf.slice(tensor,begin,end)]
 
