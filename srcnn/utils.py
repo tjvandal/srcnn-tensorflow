@@ -4,8 +4,8 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 
 from tensorflow.python.ops import init_ops
-from tensorflow.contrib.layers.python.layers import utils
-from tensorflow.contrib.framework.python.ops import variables
+# from tensorflow.contrib.layers.python.layers import utils
+# from tensorflow.contrib.framework.python.ops import variables
 from tensorflow.python.ops import variable_scope
 from tensorflow.python.training import moving_averages
 
@@ -74,73 +74,73 @@ def nanvar(x, axis=None):
     x_ss = tf.reduce_sum(input_tensor=(x_filled - x_mean)**2, axis=axis)
     return x_ss / x_count
 
-def nan_batch_norm(inputs, decay=0.999, center=True, scale=False, epsilon=0.001,
-        is_training=True, reuse=None, variables_collections=None, outputs_collections=None,
-        trainable=False, scope=None):
-    with variable_scope.variable_op_scope([inputs],
-                    scope, 'NanBatchNorm', reuse=reuse) as sc:
-        inputs_shape = inputs.get_shape()
-        inputs_rank = inputs_shape.ndims
-        if inputs_rank is None:
-          raise ValueError('Inputs %s has undefined rank.' % inputs.name)
-        dtype = inputs.dtype.base_dtype
-        axis = list(range(inputs_rank - 1))
-        params_shape = inputs_shape[-1:]
-        beta, gamma = None, None
-        if center:
-          beta_collections = utils.get_variable_collections(variables_collections,
-                                                            'beta')
-          beta = variables.model_variable('beta',
-                                          shape=params_shape,
-                                          dtype=dtype,
-                                          initializer=init_ops.zeros_initializer,
-                                          collections=beta_collections,
-                                          trainable=False)
-        if scale:
-          gamma_collections = utils.get_variable_collections(variables_collections,
-                                                             'gamma')
-          gamma = variables.model_variable('gamma',
-                                           shape=params_shape,
-                                           dtype=dtype,
-                                           initializer=init_ops.ones_initializer,
-                                           collections=gamma_collections,
-                                           trainable=trainable)
-        # Create moving_mean and moving_variance variables and add them to the
-        # appropiate collections.
-        moving_mean_collections = utils.get_variable_collections(
-            variables_collections, 'moving_mean')
-        moving_mean = variables.model_variable(
-            'moving_mean',
-            shape=params_shape,
-            dtype=dtype,
-            initializer=init_ops.zeros_initializer,
-            trainable=False,
-            collections=moving_mean_collections)
-        moving_variance_collections = utils.get_variable_collections(
-            variables_collections, 'moving_variance')
-        moving_variance = variables.model_variable(
-            'moving_variance',
-            shape=params_shape,
-            dtype=dtype,
-            initializer=init_ops.ones_initializer,
-            trainable=False,
-            collections=moving_variance_collections)
-        is_training_value = utils.constant_value(is_training)
-        need_moments = is_training_value is None or is_training_value
-        if need_moments:
-            mean = nanmean(inputs, axis=axis)
-            variance = nanvar(inputs, axis=axis)
-            moving_mean = moving_averages.assign_moving_average(
-                moving_mean, mean, decay)
-            moving_variance = moving_averages.assign_moving_average(
-                moving_variance, variance, decay)
-        mean, variance = moving_mean, moving_variance
-        outputs = tf.nn.batch_normalization(inputs, mean, variance, beta, gamma, epsilon)
-        outputs.set_shape(inputs_shape)
-        return utils.collect_named_outputs(outputs_collections, sc.name, outputs)
+# def nan_batch_norm(inputs, decay=0.999, center=True, scale=False, epsilon=0.001,
+#         is_training=True, reuse=None, variables_collections=None, outputs_collections=None,
+#         trainable=False, scope=None):
+#     with variable_scope.variable_op_scope([inputs],
+#                     scope, 'NanBatchNorm', reuse=reuse) as sc:
+#         inputs_shape = inputs.get_shape()
+#         inputs_rank = inputs_shape.ndims
+#         if inputs_rank is None:
+#           raise ValueError('Inputs %s has undefined rank.' % inputs.name)
+#         dtype = inputs.dtype.base_dtype
+#         axis = list(range(inputs_rank - 1))
+#         params_shape = inputs_shape[-1:]
+#         beta, gamma = None, None
+#         if center:
+#           beta_collections = utils.get_variable_collections(variables_collections,
+#                                                             'beta')
+#           beta = variables.model_variable('beta',
+#                                           shape=params_shape,
+#                                           dtype=dtype,
+#                                           initializer=init_ops.zeros_initializer,
+#                                           collections=beta_collections,
+#                                           trainable=False)
+#         if scale:
+#           gamma_collections = utils.get_variable_collections(variables_collections,
+#                                                              'gamma')
+#           gamma = variables.model_variable('gamma',
+#                                            shape=params_shape,
+#                                            dtype=dtype,
+#                                            initializer=init_ops.ones_initializer,
+#                                            collections=gamma_collections,
+#                                            trainable=trainable)
+#         # Create moving_mean and moving_variance variables and add them to the
+#         # appropiate collections.
+#         moving_mean_collections = utils.get_variable_collections(
+#             variables_collections, 'moving_mean')
+#         moving_mean = variables.model_variable(
+#             'moving_mean',
+#             shape=params_shape,
+#             dtype=dtype,
+#             initializer=init_ops.zeros_initializer,
+#             trainable=False,
+#             collections=moving_mean_collections)
+#         moving_variance_collections = utils.get_variable_collections(
+#             variables_collections, 'moving_variance')
+#         moving_variance = variables.model_variable(
+#             'moving_variance',
+#             shape=params_shape,
+#             dtype=dtype,
+#             initializer=init_ops.ones_initializer,
+#             trainable=False,
+#             collections=moving_variance_collections)
+#         is_training_value = utils.constant_value(is_training)
+#         need_moments = is_training_value is None or is_training_value
+#         if need_moments:
+#             mean = nanmean(inputs, axis=axis)
+#             variance = nanvar(inputs, axis=axis)
+#             moving_mean = moving_averages.assign_moving_average(
+#                 moving_mean, mean, decay)
+#             moving_variance = moving_averages.assign_moving_average(
+#                 moving_variance, variance, decay)
+#         mean, variance = moving_mean, moving_variance
+#         outputs = tf.nn.batch_normalization(inputs, mean, variance, beta, gamma, epsilon)
+#         outputs.set_shape(inputs_shape)
+#         return utils.collect_named_outputs(outputs_collections, sc.name, outputs)
 
-def inverse_batch_norm(inputs, mu, variance, beta, epsilon=0.001, name='predictions'):
-    return tf.add((inputs-beta) * tf.sqrt(variance),  mu - epsilon, name=name)
+# def inverse_batch_norm(inputs, mu, variance, beta, epsilon=0.001, name='predictions'):
+#     return tf.add((inputs-beta) * tf.sqrt(variance),  mu - epsilon, name=name)
 
 def _prepend_edge(tensor, pad_amt, axis=1):
     '''
